@@ -159,6 +159,81 @@ The `run-test` Claude Code skill drives end-to-end UI tests against your Android
 | **Keyboard dismissal** | Tap the next field directly — never `press_key BACK` (it navigates screens) |
 | **Dropdowns** | Tap → re-dump → derive item coordinate → tap item |
 
+## generate-android-test skill — generate instrumented test classes
+
+The `generate-android-test` Claude Code skill generates a full Compose UI instrumented test from a plain-English markdown spec. It inspects your source composables, adds missing `testTag` modifiers, optionally walks the live app via ADB, and outputs a Page Object Model test class ready to run.
+
+### Setup
+
+1. **Copy the skill into your project:**
+
+   ```sh
+   cp .claude/commands/generate-android-test.md  <your-project>/.claude/commands/generate-android-test.md
+   ```
+
+2. **Write a test spec** at `.claude/tests/<test-name>.md`:
+
+   ```markdown
+   1. Open the app
+   2. Enter "user@example.com" in the email field
+   3. Enter "secret123" in the password field
+   4. Tap the Login button
+   5. Wait for home screen
+   6. Verify welcome message is visible
+   ```
+
+3. **Run the skill** inside Claude Code:
+
+   ```
+   /generate-android-test <test-name>
+   ```
+
+   Example: `/generate-android-test login-flow`
+
+### What the skill does
+
+| Step | Action |
+|------|--------|
+| 1 | Reads the markdown test spec |
+| 2 | Detects existing test patterns in `androidTest/` and follows them |
+| 3 | Adds missing Compose UI test dependencies to `build.gradle.kts` |
+| 4 | Inspects source composables and adds `testTag` modifiers to interactive elements |
+| 5 | Optionally walks the live app via ADB to confirm real selectors (skips gracefully if no device) |
+| 6 | Generates screen helper classes (Page Object Model) and the test class |
+| 7 | Reports all created/modified files and how to run |
+
+### Output structure
+
+```
+<app-module>/src/androidTest/kotlin/<package>/
+  screens/
+    <ScreenName>Screen.kt    ← one file per distinct screen in the flow
+  <TestName>Test.kt          ← the test class
+```
+
+### testTag naming convention
+
+Tags use `snake_case` prefixed with the screen name:
+
+```
+login_username_field
+login_submit_button
+home_filter_dropdown
+settings_theme_switch
+```
+
+### Running the generated tests
+
+```sh
+# All instrumented tests
+./gradlew connectedAndroidTest
+
+# Single test class
+./gradlew connectedAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.example.app.LoginFlowTest
+```
+
+Or right-click the test class in Android Studio and select **Run**.
+
 ## Project structure
 
 ```
@@ -169,7 +244,8 @@ uv.lock               Locked dependency versions
 .gitignore
 .claude/
   commands/
-    run-test.md       Claude Code skill — copy into your project
+    run-test.md               Claude Code skill — drives live ADB UI tests
+    generate-android-test.md  Claude Code skill — generates instrumented test classes
   tests/
     example-flow.md   Example test file template
 ```
