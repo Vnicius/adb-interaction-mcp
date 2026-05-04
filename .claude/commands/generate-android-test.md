@@ -18,25 +18,23 @@ If files exist, read them to understand the package structure, base classes, hel
 ### Step 3 — Add test dependencies if missing
 Read `composeApp/build.gradle.kts`.
 
-If `compose.uiTest` is absent from `androidInstrumentedTest.dependencies`, apply all three of the following edits:
+If `compose.uiTest` is absent from `androidInstrumentedTest.dependencies`, apply both of the following edits:
 
-**A. Inside `kotlin { sourceSets { } }`** — add a new source set block:
+**A. Inside `kotlin { sourceSets { } }`** — add a new source set block (the `@OptIn` is required because `compose.uiTest` is an experimental CMP API):
 ```kotlin
+@OptIn(org.jetbrains.compose.ExperimentalComposeLibrary::class)
 androidInstrumentedTest.dependencies {
     implementation(libs.androidx.testExt.junit)
     implementation(compose.uiTest)
 }
 ```
 
-**B. Inside the top-level `dependencies { }` block** — add:
-```kotlin
-debugImplementation(compose.uiTestManifest)
-```
-
-**C. Inside `android { defaultConfig { } }`** — add:
+**B. Inside `android { defaultConfig { } }`** — add:
 ```kotlin
 testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 ```
+
+Note: `compose.uiTestManifest` does **not** exist in CMP 1.x's plugin DSL — do not add it. The app's existing `MainActivity` registration in the manifest is sufficient.
 
 ### Step 4 — Navigate the app to collect real element data
 
