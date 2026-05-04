@@ -60,7 +60,12 @@ This step requires a connected device and a built debug APK. If either is unavai
 
 ### Step 5 — Generate the test files
 
-**Root output directory:** `composeApp/src/androidTest/kotlin/com/medrepasse/`
+**Resolve the package name and output path first.**
+Read the app module's `build.gradle.kts` (or `build.gradle`) and extract the `namespace` (or `applicationId`) value from the `android { }` block.
+Convert it to a directory path: `com.example.app` → `com/example/app`.
+
+**Root output directory:** `<app-module>/src/androidTest/kotlin/<package-path>/`
+where `<app-module>` is the module that contains the Android application (e.g. `composeApp`, `app`).
 
 Convert the test name from kebab-case to PascalCase:
 `email-sign-up-flow` → `EmailSignUpFlow`
@@ -68,7 +73,7 @@ Convert the test name from kebab-case to PascalCase:
 #### Output structure
 
 ```
-composeApp/src/androidTest/kotlin/com/medrepasse/
+<app-module>/src/androidTest/kotlin/<package-path>/
   screens/
     <ScreenName>Screen.kt    ← one file per distinct screen in the flow
   <TestName>Test.kt          ← the test class
@@ -79,7 +84,7 @@ composeApp/src/androidTest/kotlin/com/medrepasse/
 Each screen class encapsulates all interactions for that screen. Methods are named after _intent_, not after UI implementation.
 
 ```kotlin
-package com.medrepasse.screens
+package <package>.screens
 
 import androidx.compose.ui.test.ComposeTestRule
 import androidx.compose.ui.test.assertIsDisplayed
@@ -116,11 +121,11 @@ class <ScreenName>Screen(private val rule: ComposeTestRule) {
 #### Test class template
 
 ```kotlin
-package com.medrepasse
+package <package>
 
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.medrepasse.screens.<ScreenName>Screen
+import <package>.screens.<ScreenName>Screen
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
