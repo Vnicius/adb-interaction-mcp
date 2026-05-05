@@ -1,6 +1,6 @@
 # adb-interaction-mcp
 
-MCP server that lets Claude Code control Android emulators and real devices via ADB. It exposes 20 tools for screenshots, UI inspection, input simulation, app lifecycle management, and logcat access.
+MCP server that lets Claude Code control Android emulators and real devices via ADB. It exposes 23 tools for screenshots, UI inspection, input simulation, app lifecycle management, and logcat access.
 
 ## Prerequisites
 
@@ -8,6 +8,7 @@ MCP server that lets Claude Code control Android emulators and real devices via 
 - [`uv`](https://docs.astral.sh/uv/) — `brew install uv` or `pip install uv`
 - Android SDK platform-tools (`adb` on your PATH)
 - A running Android emulator or a connected device
+- **Optional — android-cli** (required for `get_layout`, `take_annotated_screenshot`, `resolve_coordinates`, and the `-lite` skills): see [Android CLI installation](https://developer.android.com/tools/agents/android-cli)
 
 ## Installation
 
@@ -97,6 +98,16 @@ All tools accept an optional `device` parameter (defaults to the single connecte
 | `stop_app(package_name)` | Force-stop an app |
 | `start_activity(activity)` | Start a specific activity by fully-qualified name (e.g. `com.example/.MainActivity`) |
 
+### android-cli tools (token-efficient alternatives)
+
+These three tools wrap [android-cli](https://developer.android.com/tools/agents/android-cli) and replace manual XML parsing and coordinate math. They are required by the `-lite` skills.
+
+| Tool | Description |
+|------|-------------|
+| `get_layout(diff=False)` | Return the current UI as compact JSON. Pass `diff=True` to see only elements that changed since the last call — useful after a dropdown or modal opens. Prefer over `dump_ui` (JSON is smaller than XML). |
+| `take_annotated_screenshot()` | Capture a screenshot with a numbered bounding box drawn around every detected UI element. Pair with `resolve_coordinates` — no coordinate math needed. |
+| `resolve_coordinates(query)` | Resolve `#N` element labels from the last annotated screenshot to real `(x, y)` coordinates. Example: `resolve_coordinates("input tap #3")` → `"input tap 540 1200"`. Must call `take_annotated_screenshot` first. |
+
 ## Usage examples
 
 Once configured, Claude Code can use these tools directly in conversation:
@@ -158,6 +169,48 @@ The `run-test` Claude Code skill drives end-to-end UI tests against your Android
 | **Coordinate formula** | `x = (x1+x2)/2`, `y = (y1+y2)/2` from `bounds="[x1,y1][x2,y2]"` |
 | **Keyboard dismissal** | Tap the next field directly — never `press_key BACK` (it navigates screens) |
 | **Dropdowns** | Tap → re-dump → derive item coordinate → tap item |
+
+## run-test-lite skill — token-efficient UI tests (requires android-cli)
+
+`/run-test-lite` is a faster variant of `/run-test` that uses [android-cli](https://developer.android.com/tools/agents/android-cli) instead of raw ADB XML parsing.
+
+### How it differs from /run-test
+
+| Aspect | `/run-test` | `/run-test-lite` |
+|--------|-------------|-----------------|
+| UI layout | `dump_ui` → XML → manual bounds math | `take_annotated_screenshot` → numbered labels → `resolve_coordinates` |
+| Coordinate extraction | Parse `bounds="[x1,y1][x2,y2]"` and average | `resolve_coordinates("input tap #N")` |
+| Dropdown/modal updates | Full `dump_ui` re-dump | `get_layout(diff=True)` — only changed elements |
+| Screen transition check | Separate `take_screenshot` | Re-uses `take_annotated_screenshot` (one call for both) |
+| Prerequisite | ADB only | [android-cli](https://developer.android.com/tools/agents/android-cli) |
+
+### Setup
+
+1. **Copy the skill into your project:**
+
+   ```sh
+   cp .claude/commands/run-test-lite.md  <your-project>/.claude/commands/run-test-lite.md
+   ```
+
+2. **Install android-cli** — follow the [official guide](https://developer.android.com/tools/agents/android-cli) and make sure `android` is on your PATH.
+
+3. **Write a test file** at `.claude/tests/<test-name>.md` (same format as `/run-test`).
+
+4. **Run the skill** inside Claude Code:
+
+   ```
+   /run-test-lite <test-name>
+   ```
+
+   Example: `/run-test-lite login-flow`
+
+### What the skill does
+
+- Confirms a device is connected and installs/launches the debug APK
+- On each new screen: calls `take_annotated_screenshot` once, resolves all element coordinates, fires all interactions
+- After dropdowns/modals: calls `get_layout(diff=True)` — no full re-dump
+- At `Wait` steps: calls `take_annotated_screenshot` to confirm navigation and label the next screen
+- Prints a final pass/fail summary table (no per-step narration)
 
 ## generate-android-test skill — generate instrumented test classes
 
@@ -234,6 +287,52 @@ settings_theme_switch
 
 Or right-click the test class in Android Studio and select **Run**.
 
+## generate-android-test-lite skill — instrumented tests via android-cli (requires android-cli)
+
+`/generate-android-test-lite` is a faster variant of `/generate-android-test`. Steps 1–4 and 6–7 are identical; only the live-device navigation in Step 5 differs.
+
+### How it differs from /generate-android-test
+
+| Aspect | `/generate-android-test` | `/generate-android-test-lite` |
+|--------|--------------------------|-------------------------------|
+| Live UI inspection | `dump_ui` → XML → manual bounds math | `take_annotated_screenshot` → numbered labels → `resolve_coordinates` |
+| Dropdown element discovery | Full `dump_ui` re-dump | `get_layout(diff=True)` — only changed elements |
+| Screen transition confirmation | Separate `take_screenshot` | Re-uses `take_annotated_screenshot` (one call for both) |
+| Prerequisite | ADB only (device optional) | [android-cli](https://developer.android.com/tools/agents/android-cli) (device optional) |
+
+When no device is connected, both skills skip Step 5 and generate best-effort code from the `testTag` map built in Step 4.
+
+### Setup
+
+1. **Copy the skill into your project:**
+
+   ```sh
+   cp .claude/commands/generate-android-test-lite.md  <your-project>/.claude/commands/generate-android-test-lite.md
+   ```
+
+2. **Install android-cli** — follow the [official guide](https://developer.android.com/tools/agents/android-cli) and make sure `android` is on your PATH.
+
+3. **Write a test spec** at `.claude/tests/<test-name>.md` (same format as `/generate-android-test`).
+
+4. **Run the skill** inside Claude Code:
+
+   ```
+   /generate-android-test-lite <test-name>
+   ```
+
+   Example: `/generate-android-test-lite login-flow`
+
+The output structure, `testTag` naming convention, and how to run the generated tests are the same as for `/generate-android-test` — see that section above.
+
+## Choosing between the standard and lite variants
+
+| Situation | Recommended skill |
+|-----------|-------------------|
+| android-cli not installed | `/run-test`, `/generate-android-test` |
+| android-cli installed, long flows with many screens | `/run-test-lite`, `/generate-android-test-lite` |
+| Debugging a single step interactively | `/run-test` (XML output is easier to inspect manually) |
+| CI / automated script | either — both produce the same final artefacts |
+
 ## Project structure
 
 ```
@@ -244,8 +343,10 @@ uv.lock               Locked dependency versions
 .gitignore
 .claude/
   commands/
-    run-test.md               Claude Code skill — drives live ADB UI tests
-    generate-android-test.md  Claude Code skill — generates instrumented test classes
+    run-test.md                    Claude Code skill — drives live ADB UI tests (ADB-only)
+    run-test-lite.md               Claude Code skill — same as run-test, uses android-cli
+    generate-android-test.md       Claude Code skill — generates instrumented test classes (ADB-only)
+    generate-android-test-lite.md  Claude Code skill — same as generate-android-test, uses android-cli
   tests/
     example-flow.md   Example test file template
 ```

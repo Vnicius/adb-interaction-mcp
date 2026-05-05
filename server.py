@@ -97,6 +97,69 @@ def dump_ui(device: str = "") -> str:
         Path(local).unlink(missing_ok=True)
 
 
+# ─── android-cli tools (token-efficient alternatives) ─────────────────────────
+
+_ANNOTATED_PATH = Path(tempfile.gettempdir()) / "adb_mcp_annotated.png"
+
+
+def _android(*args: str, timeout: int = 30) -> tuple[str, str, int]:
+    cmd = ["android"] + list(args)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    return result.stdout.strip(), result.stderr.strip(), result.returncode
+
+
+@mcp.tool()
+def get_layout(diff: bool = False) -> str:
+    """
+    Get the current screen UI layout as JSON via android-cli.
+    Prefer over dump_ui — JSON is more compact than XML.
+    Set diff=True to return only elements that changed since the last get_layout call.
+    Requires android-cli (https://developer.android.com/tools/agents/android-cli).
+    """
+    args = ["layout"]
+    if diff:
+        args.append("--diff")
+    stdout, stderr, rc = _android(*args)
+    if rc != 0:
+        raise RuntimeError(f"android layout failed: {stderr}")
+    return stdout or "(empty layout)"
+
+
+@mcp.tool()
+def take_annotated_screenshot() -> Image:
+    """
+    Capture a screenshot with numbered bounding boxes around every detected UI element.
+    Pair with resolve_coordinates to get tap targets by label number — no coordinate math needed.
+    Requires android-cli (https://developer.android.com/tools/agents/android-cli).
+    """
+    _, stderr, rc = _android(
+        "screen", "capture", "--annotate", f"--output={_ANNOTATED_PATH}",
+    )
+    if rc != 0:
+        raise RuntimeError(f"android screen capture --annotate failed: {stderr}")
+    return Image(data=_ANNOTATED_PATH.read_bytes(), format="png")
+
+
+@mcp.tool()
+def resolve_coordinates(query: str) -> str:
+    """
+    Resolve #N placeholders to real screen coordinates using the last annotated screenshot.
+    Must call take_annotated_screenshot first.
+    Example: resolve_coordinates("input tap #3") → "input tap 540 1200"
+    Requires android-cli (https://developer.android.com/tools/agents/android-cli).
+    """
+    if not _ANNOTATED_PATH.exists():
+        raise RuntimeError("No annotated screenshot — call take_annotated_screenshot first")
+    stdout, stderr, rc = _android(
+        "screen", "resolve",
+        f"--screenshot={_ANNOTATED_PATH}",
+        f"--string={query}",
+    )
+    if rc != 0:
+        raise RuntimeError(f"android screen resolve failed: {stderr}")
+    return stdout or "(no resolved coordinates)"
+
+
 # ─── Input ────────────────────────────────────────────────────────────────────
 
 @mcp.tool()
